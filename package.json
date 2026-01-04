@@ -1,0 +1,14 @@
+{
+  "name": "ally-bot-heure-vocal",
+  "version": "1.0.0",
+  "description": "Bot Discord qui affiche l'heure de différents pays dans les salons vocaux",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.6.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1"
+  }
+}
