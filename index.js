@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ChannelType, PermissionFlagsBits, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ChannelType, PermissionFlagsBits, ActivityType, EmbedBuilder } = require('discord.js');
 const Database = require('better-sqlite3');
 const path = require('path');
 
@@ -180,6 +180,30 @@ function isOwner(userId) {
     const result = OWNER_IDS.includes(userId);
     console.log(`[AUTH] Vérification owner pour ${userId}: ${result ? '✅ Owner' : '❌ Non owner'}`);
     return result;
+}
+
+// Couleurs pour les embeds
+const Colors = {
+    Success: 0x57F287,
+    Error: 0xED4245,
+    Warning: 0xFEE75C,
+    Info: 0x5865F2,
+    Primary: 0x5865F2
+};
+
+// Créer un embed stylisé
+function createEmbed(options) {
+    const embed = new EmbedBuilder()
+        .setColor(options.color || Colors.Primary)
+        .setTimestamp();
+
+    if (options.title) embed.setTitle(options.title);
+    if (options.description) embed.setDescription(options.description);
+    if (options.fields) embed.addFields(options.fields);
+    if (options.footer) embed.setFooter({ text: options.footer });
+    if (options.thumbnail) embed.setThumbnail(options.thumbnail);
+
+    return embed;
 }
 
 // Obtenir l'heure formatée pour un fuseau horaire
@@ -467,10 +491,12 @@ client.on('interactionCreate', async interaction => {
 
         if (!tzInfo) {
             console.log(`[CMD:settime] ❌ Pays invalide: ${pays}`);
-            await interaction.reply({
-                content: `❌ Pays invalide: \`${pays}\`\n\nUtilisez l'autocomplete pour sélectionner un pays valide.`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '❌ Pays invalide',
+                description: `Le pays \`${pays}\` n'existe pas dans la liste.\n\n**Conseil:** Utilisez l'autocomplete pour sélectionner un pays valide.`,
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -481,10 +507,12 @@ client.on('interactionCreate', async interaction => {
 
         if (existing && existing.timezone === pays) {
             console.log(`[CMD:settime] ⚠️ Même zone déjà configurée`);
-            await interaction.reply({
-                content: `⚠️ Ce salon est déjà configuré avec **${tzInfo.emoji} ${tzInfo.name}** !`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '⚠️ Déjà configuré',
+                description: `Ce salon est déjà configuré avec **${tzInfo.emoji} ${tzInfo.name}**`,
+                color: Colors.Warning
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -502,14 +530,25 @@ client.on('interactionCreate', async interaction => {
             await channel.setName(newName);
             console.log(`[CMD:settime] ✅ Salon renommé`);
 
-            await interaction.editReply({
-                content: `✅ Le salon affichera maintenant l'heure de **${tzInfo.emoji} ${tzInfo.name}** (${tzInfo.utc})\n\nNouveau nom: \`${newName}\``
+            const embed = createEmbed({
+                title: '✅ Configuration réussie',
+                description: `Le salon affichera maintenant l'heure de **${tzInfo.emoji} ${tzInfo.name}**`,
+                color: Colors.Success,
+                fields: [
+                    { name: '🌍 Fuseau horaire', value: tzInfo.utc, inline: true },
+                    { name: '📝 Nouveau nom', value: `\`${newName}\``, inline: true }
+                ]
             });
+            await interaction.editReply({ embeds: [embed] });
         } catch (error) {
             console.error(`[CMD:settime] ❌ Erreur renommage:`, error.message);
-            await interaction.editReply({
-                content: `❌ Erreur: ${error.message}\n\nAssurez-vous que le bot a la permission de gérer les salons.`
+            const embed = createEmbed({
+                title: '❌ Erreur',
+                description: `Impossible de renommer le salon.\n\n**Raison:** ${error.message}`,
+                color: Colors.Error,
+                footer: 'Vérifiez que le bot a la permission de gérer les salons.'
             });
+            await interaction.editReply({ embeds: [embed] });
         }
     }
 
@@ -525,16 +564,20 @@ client.on('interactionCreate', async interaction => {
             queries.delete.run(channel.id);
             console.log(`[CMD:removetime] ✅ Supprimé`);
 
-            await interaction.reply({
-                content: `✅ Le salon **${channel.name}** ne sera plus mis à jour automatiquement.`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '✅ Configuration supprimée',
+                description: `Le salon **${channel.name}** ne sera plus mis à jour automatiquement.`,
+                color: Colors.Success
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         } else {
             console.log(`[CMD:removetime] ❌ Salon non configuré`);
-            await interaction.reply({
-                content: `❌ Ce salon n'est pas configuré pour afficher l'heure.`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '❌ Non configuré',
+                description: `Ce salon n'est pas configuré pour afficher l'heure.`,
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
 
@@ -544,27 +587,32 @@ client.on('interactionCreate', async interaction => {
         console.log(`[CMD:listtime] ${guildChannels.length} salon(s) trouvé(s)`);
 
         if (guildChannels.length === 0) {
-            await interaction.reply({
-                content: '📋 Aucun salon configuré sur ce serveur.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '📋 Liste des salons',
+                description: 'Aucun salon configuré sur ce serveur.',
+                color: Colors.Info
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
-        let list = '📋 **Salons configurés:**\n\n';
+        let list = '';
         for (const data of guildChannels) {
             const tzInfo = TIMEZONES[data.timezone];
             if (tzInfo) {
-                list += `• <#${data.channel_id}> → ${tzInfo.emoji} ${tzInfo.name} (${tzInfo.utc})\n`;
+                list += `<#${data.channel_id}> → ${tzInfo.emoji} **${tzInfo.name}** (${tzInfo.utc})\n`;
             } else {
-                list += `• <#${data.channel_id}> → ⚠️ Zone inconnue: ${data.timezone}\n`;
+                list += `<#${data.channel_id}> → ⚠️ Zone inconnue: ${data.timezone}\n`;
             }
         }
 
-        await interaction.reply({
-            content: list,
-            ephemeral: true
+        const embed = createEmbed({
+            title: '📋 Salons configurés',
+            description: list,
+            color: Colors.Info,
+            footer: `${guildChannels.length} salon(s) configuré(s)`
         });
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 
     else if (interaction.commandName === 'forceupdatetime') {
@@ -572,19 +620,24 @@ client.on('interactionCreate', async interaction => {
 
         if (!isOwner(interaction.user.id)) {
             console.log(`[CMD:forceupdatetime] ❌ Non autorisé`);
-            await interaction.reply({
-                content: '❌ Cette commande est réservée aux owners du bot.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🔒 Accès refusé',
+                description: 'Cette commande est réservée aux owners du bot.',
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
         console.log(`[CMD:forceupdatetime] Autorise, lancement de la mise a jour...`);
         await interaction.deferReply({ ephemeral: true });
         await updateAllChannels();
-        await interaction.editReply({
-            content: 'Tous les salons ont ete mis a jour!'
+        const embed = createEmbed({
+            title: '🔄 Mise à jour forcée',
+            description: 'Tous les salons ont été mis à jour avec succès!',
+            color: Colors.Success
         });
+        await interaction.editReply({ embeds: [embed] });
     }
 
     // ==================== COMMANDES OWNER BOT ====================
@@ -594,10 +647,12 @@ client.on('interactionCreate', async interaction => {
 
         if (!isOwner(interaction.user.id)) {
             console.log(`[CMD:bot-name] Non autorise`);
-            await interaction.reply({
-                content: 'Cette commande est reservee aux owners du bot.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🔒 Accès refusé',
+                description: 'Cette commande est réservée aux owners du bot.',
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -609,14 +664,20 @@ client.on('interactionCreate', async interaction => {
         try {
             await client.user.setUsername(newName);
             console.log(`[CMD:bot-name] Nom change avec succes`);
-            await interaction.editReply({
-                content: `Le nom du bot a ete change en **${newName}**`
+            const embed = createEmbed({
+                title: '✏️ Nom modifié',
+                description: `Le nom du bot a été changé en **${newName}**`,
+                color: Colors.Success
             });
+            await interaction.editReply({ embeds: [embed] });
         } catch (error) {
             console.error(`[CMD:bot-name] Erreur:`, error.message);
-            await interaction.editReply({
-                content: `Erreur lors du changement de nom: ${error.message}`
+            const embed = createEmbed({
+                title: '❌ Erreur',
+                description: `Impossible de changer le nom.\n\n**Raison:** ${error.message}`,
+                color: Colors.Error
             });
+            await interaction.editReply({ embeds: [embed] });
         }
     }
 
@@ -625,10 +686,12 @@ client.on('interactionCreate', async interaction => {
 
         if (!isOwner(interaction.user.id)) {
             console.log(`[CMD:bot-avatar] Non autorise`);
-            await interaction.reply({
-                content: 'Cette commande est reservee aux owners du bot.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🔒 Accès refusé',
+                description: 'Cette commande est réservée aux owners du bot.',
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -636,10 +699,12 @@ client.on('interactionCreate', async interaction => {
         const attachment = interaction.options.getAttachment('image');
 
         if (!url && !attachment) {
-            await interaction.reply({
-                content: 'Tu dois fournir une URL ou uploader une image.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '⚠️ Paramètre manquant',
+                description: 'Tu dois fournir une **URL** ou **uploader une image**.',
+                color: Colors.Warning
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -651,14 +716,21 @@ client.on('interactionCreate', async interaction => {
         try {
             await client.user.setAvatar(avatarUrl);
             console.log(`[CMD:bot-avatar] Avatar change avec succes`);
-            await interaction.editReply({
-                content: `L'avatar du bot a ete change avec succes!`
+            const embed = createEmbed({
+                title: '🖼️ Avatar modifié',
+                description: `L'avatar du bot a été changé avec succès!`,
+                color: Colors.Success,
+                thumbnail: avatarUrl
             });
+            await interaction.editReply({ embeds: [embed] });
         } catch (error) {
             console.error(`[CMD:bot-avatar] Erreur:`, error.message);
-            await interaction.editReply({
-                content: `Erreur lors du changement d'avatar: ${error.message}`
+            const embed = createEmbed({
+                title: '❌ Erreur',
+                description: `Impossible de changer l'avatar.\n\n**Raison:** ${error.message}`,
+                color: Colors.Error
             });
+            await interaction.editReply({ embeds: [embed] });
         }
     }
 
@@ -667,10 +739,12 @@ client.on('interactionCreate', async interaction => {
 
         if (!isOwner(interaction.user.id)) {
             console.log(`[CMD:bot-activities] Non autorise`);
-            await interaction.reply({
-                content: 'Cette commande est reservee aux owners du bot.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🔒 Accès refusé',
+                description: 'Cette commande est réservée aux owners du bot.',
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -678,7 +752,18 @@ client.on('interactionCreate', async interaction => {
         const description = interaction.options.getString('description');
         const streamUrl = interaction.options.getString('url');
 
-        console.log(`[CMD:bot-activities] Type: ${type}, Description: ${description}`);
+        console.log(`[CMD:bot-activities] Type: ${type}, Description: ${description}, URL: ${streamUrl || 'aucune'}`);
+
+        // Pour le streaming, une URL Twitch/YouTube est obligatoire
+        if (type === 'streaming' && !streamUrl) {
+            const embed = createEmbed({
+                title: '⚠️ URL requise',
+                description: 'Pour le type **Streaming**, tu dois fournir une URL Twitch ou YouTube valide.',
+                color: Colors.Warning
+            });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
 
         const activityTypes = {
             'playing': ActivityType.Playing,
@@ -694,7 +779,7 @@ client.on('interactionCreate', async interaction => {
                 type: activityTypes[type]
             };
 
-            if (type === 'streaming' && streamUrl) {
+            if (type === 'streaming') {
                 activityOptions.url = streamUrl;
             }
 
@@ -702,23 +787,28 @@ client.on('interactionCreate', async interaction => {
             console.log(`[CMD:bot-activities] Activite changee avec succes`);
 
             const typeNames = {
-                'playing': 'Joue a',
-                'listening': 'Ecoute',
-                'watching': 'Regarde',
-                'competing': 'Participe a',
-                'streaming': 'Streame'
+                'playing': '🎮 Joue à',
+                'listening': '🎧 Écoute',
+                'watching': '👀 Regarde',
+                'competing': '🏆 Participe à',
+                'streaming': '📺 Streame'
             };
 
-            await interaction.reply({
-                content: `Activite du bot changee: **${typeNames[type]}** ${description}`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🎯 Activité modifiée',
+                description: `**${typeNames[type]}** ${description}`,
+                color: Colors.Success,
+                fields: type === 'streaming' ? [{ name: '🔗 URL', value: streamUrl, inline: false }] : []
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
             console.error(`[CMD:bot-activities] Erreur:`, error.message);
-            await interaction.reply({
-                content: `Erreur lors du changement d'activite: ${error.message}`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '❌ Erreur',
+                description: `Impossible de changer l'activité.\n\n**Raison:** ${error.message}`,
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
 
@@ -727,10 +817,12 @@ client.on('interactionCreate', async interaction => {
 
         if (!isOwner(interaction.user.id)) {
             console.log(`[CMD:bot-status] Non autorise`);
-            await interaction.reply({
-                content: 'Cette commande est reservee aux owners du bot.',
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🔒 Accès refusé',
+                description: 'Cette commande est réservée aux owners du bot.',
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -742,22 +834,26 @@ client.on('interactionCreate', async interaction => {
             console.log(`[CMD:bot-status] Statut change avec succes`);
 
             const statusNames = {
-                'online': 'En ligne',
-                'idle': 'Inactif',
-                'dnd': 'Ne pas deranger',
-                'invisible': 'Invisible'
+                'online': '🟢 En ligne',
+                'idle': '🌙 Inactif',
+                'dnd': '⛔ Ne pas déranger',
+                'invisible': '👻 Invisible'
             };
 
-            await interaction.reply({
-                content: `Statut du bot change en: **${statusNames[status]}**`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '🔄 Statut modifié',
+                description: `Le statut du bot a été changé en **${statusNames[status]}**`,
+                color: Colors.Success
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
             console.error(`[CMD:bot-status] Erreur:`, error.message);
-            await interaction.reply({
-                content: `Erreur lors du changement de statut: ${error.message}`,
-                ephemeral: true
+            const embed = createEmbed({
+                title: '❌ Erreur',
+                description: `Impossible de changer le statut.\n\n**Raison:** ${error.message}`,
+                color: Colors.Error
             });
+            await interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
 
@@ -767,15 +863,15 @@ client.on('interactionCreate', async interaction => {
 
         // Essayer de répondre si possible
         try {
+            const embed = createEmbed({
+                title: '❌ Erreur inattendue',
+                description: `Une erreur s'est produite lors de l'exécution de la commande.\n\n**Détails:** ${error.message}`,
+                color: Colors.Error
+            });
             if (interaction.deferred) {
-                await interaction.editReply({
-                    content: `❌ Une erreur s'est produite: ${error.message}`
-                });
+                await interaction.editReply({ embeds: [embed] });
             } else if (!interaction.replied) {
-                await interaction.reply({
-                    content: `❌ Une erreur s'est produite: ${error.message}`,
-                    ephemeral: true
-                });
+                await interaction.reply({ embeds: [embed], ephemeral: true });
             }
         } catch (replyError) {
             console.error(`[CMD] ❌ Impossible de répondre à l'interaction:`, replyError.message);
@@ -807,13 +903,12 @@ client.once('ready', async () => {
     console.log(`[READY] Fuseaux horaires: ${Object.keys(TIMEZONES).length}`);
     console.log('========================================');
 
-    // Définir l'activité Streaming Twitch
-    client.user.setActivity({
-        name: 'aminematue',
-        type: ActivityType.Streaming,
-        url: 'https://twitch.tv/aminematue'
+    // Définir le statut online sans activité au démarrage
+    client.user.setPresence({
+        status: 'online',
+        activities: []
     });
-    console.log('[READY] Activité Streaming Twitch configurée');
+    console.log('[READY] Statut défini: online (sans activité)');
 
     // Enregistrer les commandes
     await deployCommands();
