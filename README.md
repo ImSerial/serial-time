@@ -3,5 +3,5 @@
 ```
 TOKEN=
 CLIENT_ID=
-OWNERS
+OWNER_IDS=id1,id2
 ```
