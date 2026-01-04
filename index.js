@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ChannelType, PermissionFlagsBits, ActivityType } = require('discord.js');
 const Database = require('better-sqlite3');
 const path = require('path');
 
@@ -329,7 +329,68 @@ async function deployCommands() {
 
         new SlashCommandBuilder()
             .setName('forceupdatetime')
-            .setDescription('[Owner] Force la mise à jour de tous les salons')
+            .setDescription('[Owner] Force la mise à jour de tous les salons'),
+
+        // Commandes Owner pour gérer le bot
+        new SlashCommandBuilder()
+            .setName('bot-name')
+            .setDescription('[Owner] Change le nom du bot')
+            .addStringOption(option =>
+                option.setName('name')
+                    .setDescription('Le nouveau nom du bot')
+                    .setRequired(true)
+                    .setMinLength(2)
+                    .setMaxLength(32)),
+
+        new SlashCommandBuilder()
+            .setName('bot-avatar')
+            .setDescription('[Owner] Change l\'avatar du bot')
+            .addStringOption(option =>
+                option.setName('url')
+                    .setDescription('URL de l\'image (PNG, JPG, GIF)')
+                    .setRequired(false))
+            .addAttachmentOption(option =>
+                option.setName('image')
+                    .setDescription('Uploader une image directement')
+                    .setRequired(false)),
+
+        new SlashCommandBuilder()
+            .setName('bot-activities')
+            .setDescription('[Owner] Change l\'activité du bot')
+            .addStringOption(option =>
+                option.setName('type')
+                    .setDescription('Type d\'activité')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: 'Playing (Joue à)', value: 'playing' },
+                        { name: 'Listening (Écoute)', value: 'listening' },
+                        { name: 'Watching (Regarde)', value: 'watching' },
+                        { name: 'Competing (Participe à)', value: 'competing' },
+                        { name: 'Streaming', value: 'streaming' }
+                    ))
+            .addStringOption(option =>
+                option.setName('description')
+                    .setDescription('Description de l\'activité')
+                    .setRequired(true)
+                    .setMaxLength(128))
+            .addStringOption(option =>
+                option.setName('url')
+                    .setDescription('URL du stream (uniquement pour Streaming, Twitch/YouTube)')
+                    .setRequired(false)),
+
+        new SlashCommandBuilder()
+            .setName('bot-status')
+            .setDescription('[Owner] Change le statut du bot')
+            .addStringOption(option =>
+                option.setName('status')
+                    .setDescription('Le statut du bot')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: 'Online (En ligne)', value: 'online' },
+                        { name: 'Idle (Inactif)', value: 'idle' },
+                        { name: 'DND (Ne pas déranger)', value: 'dnd' },
+                        { name: 'Invisible', value: 'invisible' }
+                    ))
     ];
 
     console.log(`[DEPLOY] ${commands.length} commandes préparées`);
@@ -518,13 +579,188 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
-        console.log(`[CMD:forceupdatetime] ✅ Autorisé, lancement de la mise à jour...`);
+        console.log(`[CMD:forceupdatetime] Autorise, lancement de la mise a jour...`);
         await interaction.deferReply({ ephemeral: true });
         await updateAllChannels();
         await interaction.editReply({
-            content: '✅ Tous les salons ont été mis à jour!'
+            content: 'Tous les salons ont ete mis a jour!'
         });
     }
+
+    // ==================== COMMANDES OWNER BOT ====================
+
+    else if (interaction.commandName === 'bot-name') {
+        console.log(`[CMD:bot-name] Demande par ${interaction.user.id}`);
+
+        if (!isOwner(interaction.user.id)) {
+            console.log(`[CMD:bot-name] Non autorise`);
+            await interaction.reply({
+                content: 'Cette commande est reservee aux owners du bot.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        const newName = interaction.options.getString('name');
+        console.log(`[CMD:bot-name] Nouveau nom: ${newName}`);
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            await client.user.setUsername(newName);
+            console.log(`[CMD:bot-name] Nom change avec succes`);
+            await interaction.editReply({
+                content: `Le nom du bot a ete change en **${newName}**`
+            });
+        } catch (error) {
+            console.error(`[CMD:bot-name] Erreur:`, error.message);
+            await interaction.editReply({
+                content: `Erreur lors du changement de nom: ${error.message}`
+            });
+        }
+    }
+
+    else if (interaction.commandName === 'bot-avatar') {
+        console.log(`[CMD:bot-avatar] Demande par ${interaction.user.id}`);
+
+        if (!isOwner(interaction.user.id)) {
+            console.log(`[CMD:bot-avatar] Non autorise`);
+            await interaction.reply({
+                content: 'Cette commande est reservee aux owners du bot.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        const url = interaction.options.getString('url');
+        const attachment = interaction.options.getAttachment('image');
+
+        if (!url && !attachment) {
+            await interaction.reply({
+                content: 'Tu dois fournir une URL ou uploader une image.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        const avatarUrl = attachment ? attachment.url : url;
+        console.log(`[CMD:bot-avatar] URL avatar: ${avatarUrl}`);
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            await client.user.setAvatar(avatarUrl);
+            console.log(`[CMD:bot-avatar] Avatar change avec succes`);
+            await interaction.editReply({
+                content: `L'avatar du bot a ete change avec succes!`
+            });
+        } catch (error) {
+            console.error(`[CMD:bot-avatar] Erreur:`, error.message);
+            await interaction.editReply({
+                content: `Erreur lors du changement d'avatar: ${error.message}`
+            });
+        }
+    }
+
+    else if (interaction.commandName === 'bot-activities') {
+        console.log(`[CMD:bot-activities] Demande par ${interaction.user.id}`);
+
+        if (!isOwner(interaction.user.id)) {
+            console.log(`[CMD:bot-activities] Non autorise`);
+            await interaction.reply({
+                content: 'Cette commande est reservee aux owners du bot.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        const type = interaction.options.getString('type');
+        const description = interaction.options.getString('description');
+        const streamUrl = interaction.options.getString('url');
+
+        console.log(`[CMD:bot-activities] Type: ${type}, Description: ${description}`);
+
+        const activityTypes = {
+            'playing': ActivityType.Playing,
+            'listening': ActivityType.Listening,
+            'watching': ActivityType.Watching,
+            'competing': ActivityType.Competing,
+            'streaming': ActivityType.Streaming
+        };
+
+        try {
+            const activityOptions = {
+                name: description,
+                type: activityTypes[type]
+            };
+
+            if (type === 'streaming' && streamUrl) {
+                activityOptions.url = streamUrl;
+            }
+
+            client.user.setActivity(activityOptions);
+            console.log(`[CMD:bot-activities] Activite changee avec succes`);
+
+            const typeNames = {
+                'playing': 'Joue a',
+                'listening': 'Ecoute',
+                'watching': 'Regarde',
+                'competing': 'Participe a',
+                'streaming': 'Streame'
+            };
+
+            await interaction.reply({
+                content: `Activite du bot changee: **${typeNames[type]}** ${description}`,
+                ephemeral: true
+            });
+        } catch (error) {
+            console.error(`[CMD:bot-activities] Erreur:`, error.message);
+            await interaction.reply({
+                content: `Erreur lors du changement d'activite: ${error.message}`,
+                ephemeral: true
+            });
+        }
+    }
+
+    else if (interaction.commandName === 'bot-status') {
+        console.log(`[CMD:bot-status] Demande par ${interaction.user.id}`);
+
+        if (!isOwner(interaction.user.id)) {
+            console.log(`[CMD:bot-status] Non autorise`);
+            await interaction.reply({
+                content: 'Cette commande est reservee aux owners du bot.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        const status = interaction.options.getString('status');
+        console.log(`[CMD:bot-status] Nouveau statut: ${status}`);
+
+        try {
+            client.user.setStatus(status);
+            console.log(`[CMD:bot-status] Statut change avec succes`);
+
+            const statusNames = {
+                'online': 'En ligne',
+                'idle': 'Inactif',
+                'dnd': 'Ne pas deranger',
+                'invisible': 'Invisible'
+            };
+
+            await interaction.reply({
+                content: `Statut du bot change en: **${statusNames[status]}**`,
+                ephemeral: true
+            });
+        } catch (error) {
+            console.error(`[CMD:bot-status] Erreur:`, error.message);
+            await interaction.reply({
+                content: `Erreur lors du changement de statut: ${error.message}`,
+                ephemeral: true
+            });
+        }
+    }
+
     } catch (error) {
         console.error(`[CMD] ❌ Erreur lors de l'exécution de la commande:`, error.message);
         console.error(`[CMD] Code d'erreur:`, error.code);
@@ -570,6 +806,14 @@ client.once('ready', async () => {
     console.log(`[READY] Owners: ${OWNER_IDS.join(', ')}`);
     console.log(`[READY] Fuseaux horaires: ${Object.keys(TIMEZONES).length}`);
     console.log('========================================');
+
+    // Définir l'activité Streaming Twitch
+    client.user.setActivity({
+        name: 'aminematue',
+        type: ActivityType.Streaming,
+        url: 'https://twitch.tv/aminematue'
+    });
+    console.log('[READY] Activité Streaming Twitch configurée');
 
     // Enregistrer les commandes
     await deployCommands();
