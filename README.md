@@ -1,3 +1,5 @@
+🌍 Petit projet permettant de configurer un salon vocal avec une zone géographique spécifique afin d’optimiser la connexion et la qualité audio des utilisateurs.
+
 # CONFIGURATION ENV :
 
 ```
